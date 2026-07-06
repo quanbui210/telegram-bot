@@ -28,12 +28,11 @@ export const checkCalendar = tool(
       if (events.length === 0) {
         return 'No events found for this time period.';
       }
-
       return events
         .map((event) => {
           const start = event.start?.dateTime || event.start?.date;
           const end = event.end?.dateTime || event.end?.date;
-          return `- **${event.summary}**: from ${start} to ${end}`;
+          return `- **${event.summary}** (ID: ${event.id}): from ${start} to ${end}`;
         })
         .join('\n');
     } catch (error: any) {
@@ -82,6 +81,74 @@ export const insertCalendarEvent = tool(
       startTime: z.string().describe('The starting ISO timestamp for the meeting'),
       endTime: z.string().describe('The ending ISO timestamp for the meeting'),
       description: z.string().optional().describe('Extra contextual details or location info for the event'),
+    }),
+  }
+);
+
+
+export const modifyCalendarEvent = tool(
+  async ({ eventId, title, startTime, endTime, description }) => {
+    try {
+      const requestBody: any = {};
+      
+      if (title) requestBody.summary = title;
+      if (description) requestBody.description = description;
+      if (startTime) {
+        requestBody.start = {
+          dateTime: new Date(startTime).toISOString(),
+          timeZone: 'Europe/Helsinki',
+        };
+      }
+      if (endTime) {
+        requestBody.end = {
+          dateTime: new Date(endTime).toISOString(),
+          timeZone: 'Europe/Helsinki',
+        };
+      }
+
+      const response = await calendar.events.patch({
+        calendarId: CALENDAR_ID,
+        eventId: eventId,
+        requestBody: requestBody,
+      });
+
+      return `Successfully updated event ID ${eventId}. New details link: ${response.data.htmlLink}`;
+    } catch (error: any) {
+      return `Failed to modify calendar event: ${error.message}`;
+    }
+  },
+  {
+    name: 'modify_calendar_event',
+    description: 'Modify or update details of an existing calendar event. Only provide fields that need updating.',
+    schema: z.object({
+      eventId: z.string().describe('The unique ID of the calendar event to modify (obtained via check_calendar)'),
+      title: z.string().optional().describe('The updated title name for the event'),
+      startTime: z.string().optional().describe('The updated starting ISO timestamp'),
+      endTime: z.string().optional().describe('The updated ending ISO timestamp'),
+      description: z.string().optional().describe('The updated context details'),
+    }),
+  }
+);
+
+
+export const deleteCalendarEvent = tool(
+  async ({ eventId }) => {
+    try {
+      await calendar.events.delete({
+        calendarId: CALENDAR_ID,
+        eventId: eventId,
+      });
+
+      return `Successfully deleted event with ID: ${eventId}.`;
+    } catch (error: any) {
+      return `Failed to delete calendar event: ${error.message}`;
+    }
+  },
+  {
+    name: 'delete_calendar_event',
+    description: 'Completely remove/delete an event from the calendar using its unique eventId.',
+    schema: z.object({
+      eventId: z.string().describe('The unique ID of the event to delete'),
     }),
   }
 );
