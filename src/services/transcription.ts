@@ -11,9 +11,9 @@ export async function transcribeAudio(
   const file = await toFile(audio, filename, { type: "audio/ogg" });
 
   const { text } = await openai.audio.transcriptions.create({
-    model: "gpt-4o-transcribe",
+    model: "whisper-1",
     file,
-  });
+});
 
   return text.trim();
 }

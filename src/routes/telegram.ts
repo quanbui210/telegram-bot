@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { chat } from "../agent/graph";
+import { verifyTelegramSecret } from "../middleware/telegram-auth";
 import { resolveUserInput } from "../services/message-input";
 import { sendMessage } from "../services/telegram";
 import type { TelegramUpdate } from "../types/telegram";
 
 export const telegramRouter = Router();
 
-telegramRouter.post("/telegram", async (req, res) => {
+telegramRouter.post("/telegram", verifyTelegramSecret, async (req, res) => {
   const update = req.body as TelegramUpdate;
   const message = update.message;
 
