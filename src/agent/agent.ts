@@ -13,29 +13,26 @@ export const agent = createAgent({
   systemPrompt: SYSTEM_PROMPT,
 });
 
+function isTextBlock(block: unknown): block is { type: "text"; text: string } {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    "type" in block &&
+    block.type === "text" &&
+    "text" in block &&
+    typeof block.text === "string"
+  );
+}
+
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return String(content);
 
-  if (Array.isArray(content)) {
-    return content
-      .map((block) => {
-        if (typeof block === "string") return block;
-        if (
-          typeof block === "object" &&
-          block !== null &&
-          "type" in block &&
-          block.type === "text" &&
-          "text" in block &&
-          typeof block.text === "string"
-        ) {
-          return block.text;
-        }
-        return "";
-      })
-      .join("");
-  }
-
-  return String(content);
+  return content
+    .map((block) =>
+      typeof block === "string" ? block : isTextBlock(block) ? block.text : ""
+    )
+    .join("");
 }
 
 export async function chat(

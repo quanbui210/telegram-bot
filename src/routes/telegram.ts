@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { chat } from "../agent/graph";
+import { chat } from "../agent/agent";
 import { verifyTelegramSecret } from "../middleware/telegram-auth";
 import { resolveUserInput } from "../services/message-input";
 import { sendMessage } from "../services/telegram";
