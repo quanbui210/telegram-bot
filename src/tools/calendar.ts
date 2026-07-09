@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { env } from '../config/environment';
+import { env } from '../config';
 
 const auth = new google.auth.JWT({
   email: env.GOOGLE_CLIENT_EMAIL,
@@ -152,3 +152,5 @@ export const deleteCalendarEvent = tool(
     }),
   }
 );
+
+

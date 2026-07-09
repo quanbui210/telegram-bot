@@ -5,6 +5,7 @@
 - Text chat via Telegram webhook
 - Voice messages transcribed
 - Google Calendar: check schedule, create, update, delete events
+- Portfolio: live quotes, net worth, holdings CRUD (SQLite + Yahoo Finance)
 - Per-chat conversation memory (in-memory, resets on restart)
 
 ## Requirements
@@ -32,8 +33,21 @@ npm run dev
 | `OPENAI_API_KEY` | OpenAI API key |
 | `GOOGLE_CLIENT_EMAIL` | Service account email |
 | `GOOGLE_PRIVATE_KEY` | Service account private key |
+| `DB_PATH` | SQLite path (default `./data/portfolio.db`) |
 
 See `.env.example` for the full list.
+
+### Portfolio seed
+
+Holdings are not stored in git. Bootstrap from a local JSON file:
+
+```bash
+cp data/portfolio.seed.example.json data/portfolio.seed.json
+# edit with your holdings
+npm run seed
+```
+
+On Railway, mount a volume at `/data` and set `DB_PATH=/data/portfolio.db`.
 
 ## Local development
 
@@ -72,16 +86,18 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 | `npm run build` | Compile TypeScript |
 | `npm start` | Run production build |
 | `npm run tunnel` | Expose local port via localtunnel |
+| `npm run seed` | Load holdings from `data/portfolio.seed.json` into SQLite |
 
 ## Project structure
 
 ```
 src/
-├── index.ts              
-├── app.ts# Ex            
-├── routes/telegram.ts    # Webhook handler
-├── agent/agent.ts        # LangChain agent + chat()
-├── services/             # Telegram API, transcription, input parsing
-├── tools/                # Langchain tools
-└── middleware/           # Webhook secret validation
+├── index.ts          # server + webhook + auth
+├── telegram.ts       # bot API, voice, input parsing
+├── config.ts         # env vars
+├── agent/
+│   └── index.ts      # prompt + LangChain agent + chat()
+└── tools/
+    ├── calendar.ts   # Google Calendar + tools
+    └── portfolio.ts  # SQLite + Yahoo Finance + tools
 ```

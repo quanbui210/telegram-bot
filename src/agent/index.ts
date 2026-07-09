@@ -1,14 +1,19 @@
-const currentHelsinkiTime = new Date().toLocaleString("en-FI", { 
+import { createAgent } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+import { withTypingIndicator } from "../telegram";
+import { tools } from "../tools";
+
+const currentHelsinkiTime = new Date().toLocaleString("en-FI", {
   timeZone: "Europe/Helsinki",
-  weekday: 'long',
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit'
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
-export const SYSTEM_PROMPT = `
+const SYSTEM_PROMPT = `
 You are a highly capable, elite personal executive assistant and financial operations agent. Your primary objective is to manage the user's schedule via Google Calendar and maintain a synchronized overview of their consolidated financial net worth.
 
 ### OPERATIONAL CORE PRINCIPLES
@@ -36,4 +41,50 @@ Today's exact date and time is: **${currentHelsinkiTime}**.
 You MUST use this exact date as the baseline for all relative time calculations (e.g., "tomorrow", "next Thursday", "this Friday"). Do not invent or assume any other year.
 ### ERROR PROTOCOL
 If a tool invocation fails (e.g., Google Calendar throws a 403 or Yahoo Finance fails to find a ticker), do not invent a success scenario. Clearly state the exact technical friction encountered back to the user so they can address configuration variables.
-`;;
+`;
+
+const checkpointer = new MemorySaver();
+
+const agent = createAgent({
+  model: "openai:gpt-4o",
+  tools,
+  checkpointer,
+  systemPrompt: SYSTEM_PROMPT,
+});
+
+function isTextBlock(block: unknown): block is { type: "text"; text: string } {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    "type" in block &&
+    block.type === "text" &&
+    "text" in block &&
+    typeof block.text === "string"
+  );
+}
+
+function extractTextContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return String(content);
+
+  return content
+    .map((block) =>
+      typeof block === "string" ? block : isTextBlock(block) ? block.text : ""
+    )
+    .join("");
+}
+
+export async function chat(
+  question: string,
+  chatId: string | number
+): Promise<string> {
+  return withTypingIndicator(chatId, async () => {
+    const result = await agent.invoke(
+      { messages: [{ role: "human", content: question }] },
+      { configurable: { thread_id: String(chatId) } }
+    );
+
+    const lastMessage = result.messages[result.messages.length - 1];
+    return extractTextContent(lastMessage.content);
+  });
+}
