@@ -29,7 +29,7 @@ if (!parsed.success) {
 }
 
 function bootstrapLangSmith(data: z.infer<typeof envSchema>): void {
-  const apiKey = data.LANGSMITH_API_KEY ?? data.LANGCHAIN_API_KEY;
+  const apiKey = (data.LANGSMITH_API_KEY || data.LANGCHAIN_API_KEY)?.trim();
   const tracingEnabled =
     (data.LANGSMITH_TRACING ?? data.LANGCHAIN_TRACING_V2 ?? "false") === "true";
 
@@ -38,8 +38,11 @@ function bootstrapLangSmith(data: z.infer<typeof envSchema>): void {
     return;
   }
 
-  const project =
-    data.LANGSMITH_PROJECT ?? data.LANGCHAIN_PROJECT ?? "telegram-bot";
+  const project = (
+    data.LANGSMITH_PROJECT ||
+    data.LANGCHAIN_PROJECT ||
+    "telegram-bot"
+  ).trim();
   const endpoint =
     data.LANGSMITH_ENDPOINT ?? "https://eu.api.smith.langchain.com";
 
