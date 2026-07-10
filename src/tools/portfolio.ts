@@ -71,7 +71,13 @@ function getDb(): Database.Database {
 }
 
 export function initDb(): void {
-  getDb();
+  const database = getDb();
+  const count = (
+    database.prepare("SELECT COUNT(*) AS count FROM holdings").get() as {
+      count: number;
+    }
+  ).count;
+  console.log(`Portfolio DB ready: ${count} holdings at ${env.DB_PATH}`);
 }
 
 function rowToHolding(row: {

@@ -9,6 +9,8 @@ import {
   type TelegramUpdate,
 } from "./telegram";
 
+console.log(`DB_PATH: ${env.DB_PATH}`);
+
 initDb();
 
 const app = express();
