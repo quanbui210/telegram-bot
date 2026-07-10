@@ -36,6 +36,7 @@ interface PortfolioLine {
   costBasisEur: number;
   gainEur: number;
   gainPct: number;
+  quoteUnavailable?: boolean;
 }
 
 export interface PortfolioSummary {
@@ -189,23 +190,37 @@ export function seedHoldings(holdings: SeedHolding[]): number {
 
 // --- market ---
 
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+
+function quoteCandidates(symbol: string): string[] {
+  const upper = symbol.toUpperCase();
+  if (upper.includes(".")) return [upper];
+  return [...new Set([upper, `${upper}.DE`, `${upper}.AS`, `${upper}.L`])];
+}
 
 async function getQuote(ticker: string) {
-  const symbol = ticker.toUpperCase();
-  const result = await yahooFinance.quote(symbol);
-  if (Array.isArray(result)) throw new Error(`Unexpected quote array for ${symbol}`);
+  let lastError = `No price data for ${ticker.toUpperCase()}`;
 
-  const price = result.regularMarketPrice;
-  const currency = result.currency;
-  if (price == null || !currency) throw new Error(`No price data for ${symbol}`);
+  for (const symbol of quoteCandidates(ticker)) {
+    const result = await yahooFinance.quote(symbol);
+    if (!result || Array.isArray(result)) continue;
 
-  return {
-    ticker: result.symbol ?? symbol,
-    price,
-    currency,
-    changePct: result.regularMarketChangePercent ?? null,
-  };
+    const price = result.regularMarketPrice;
+    const currency = result.currency;
+    if (price == null || !currency) {
+      lastError = `No price data for ${symbol}`;
+      continue;
+    }
+
+    return {
+      ticker: result.symbol ?? symbol,
+      price,
+      currency,
+      changePct: result.regularMarketChangePercent ?? null,
+    };
+  }
+
+  throw new Error(lastError);
 }
 
 async function convertToEur(amount: number, currency: string): Promise<number> {
@@ -214,7 +229,7 @@ async function convertToEur(amount: number, currency: string): Promise<number> {
 
   const pair = `EUR${normalized}=X`;
   const fx = await yahooFinance.quote(pair);
-  if (Array.isArray(fx)) throw new Error(`Unexpected FX quote for ${pair}`);
+  if (!fx || Array.isArray(fx)) throw new Error(`No FX rate for ${normalized} → EUR`);
 
   const rate = fx.regularMarketPrice;
   if (!rate) throw new Error(`No FX rate for ${normalized} → EUR`);
@@ -238,26 +253,43 @@ function formatPct(value: number): string {
 }
 
 async function buildPortfolioLine(holding: Holding): Promise<PortfolioLine> {
-  const quote = await getQuote(holding.ticker);
-  const marketValue = holding.quantity * quote.price;
   const costBasis = holding.quantity * holding.avgCost;
-  const marketValueEur = await convertToEur(marketValue, quote.currency);
   const costBasisEur = await convertToEur(costBasis, holding.currency);
-  const gainEur = marketValueEur - costBasisEur;
-  const gainPct = costBasisEur === 0 ? 0 : (gainEur / costBasisEur) * 100;
 
-  return {
-    ticker: holding.ticker,
-    quantity: holding.quantity,
-    avgCost: holding.avgCost,
-    currency: holding.currency,
-    broker: holding.broker,
-    currentPrice: quote.price,
-    marketValueEur,
-    costBasisEur,
-    gainEur,
-    gainPct,
-  };
+  try {
+    const quote = await getQuote(holding.ticker);
+    const marketValue = holding.quantity * quote.price;
+    const marketValueEur = await convertToEur(marketValue, quote.currency);
+    const gainEur = marketValueEur - costBasisEur;
+    const gainPct = costBasisEur === 0 ? 0 : (gainEur / costBasisEur) * 100;
+
+    return {
+      ticker: holding.ticker,
+      quantity: holding.quantity,
+      avgCost: holding.avgCost,
+      currency: holding.currency,
+      broker: holding.broker,
+      currentPrice: quote.price,
+      marketValueEur,
+      costBasisEur,
+      gainEur,
+      gainPct,
+    };
+  } catch {
+    return {
+      ticker: holding.ticker,
+      quantity: holding.quantity,
+      avgCost: holding.avgCost,
+      currency: holding.currency,
+      broker: holding.broker,
+      currentPrice: holding.avgCost,
+      marketValueEur: costBasisEur,
+      costBasisEur,
+      gainEur: 0,
+      gainPct: 0,
+      quoteUnavailable: true,
+    };
+  }
 }
 
 async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
@@ -273,11 +305,13 @@ async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
   }
 
   const lines = await Promise.all(holdings.map(buildPortfolioLine));
-  const totalMarketValueEur = lines.reduce((s, l) => s + l.marketValueEur, 0);
+  const pricedLines = lines.filter((line) => !line.quoteUnavailable);
+  const totalMarketValueEur = pricedLines.reduce((s, l) => s + l.marketValueEur, 0);
   const totalCostBasisEur = lines.reduce((s, l) => s + l.costBasisEur, 0);
-  const totalGainEur = totalMarketValueEur - totalCostBasisEur;
+  const pricedCostBasisEur = pricedLines.reduce((s, l) => s + l.costBasisEur, 0);
+  const totalGainEur = totalMarketValueEur - pricedCostBasisEur;
   const totalGainPct =
-    totalCostBasisEur === 0 ? 0 : (totalGainEur / totalCostBasisEur) * 100;
+    pricedCostBasisEur === 0 ? 0 : (totalGainEur / pricedCostBasisEur) * 100;
 
   return { lines, totalMarketValueEur, totalCostBasisEur, totalGainEur, totalGainPct };
 }
@@ -287,8 +321,20 @@ function formatPortfolioSummary(summary: PortfolioSummary): string {
 
   const lines = summary.lines.map((line) => {
     const broker = line.broker ? ` · ${line.broker}` : "";
+    if (line.quoteUnavailable) {
+      return `- **${line.ticker}** · ${line.quantity} @ ${formatMoney(line.avgCost, line.currency)} → price unavailable · cost basis ${formatMoney(line.costBasisEur)}${broker}`;
+    }
     return `- **${line.ticker}** · ${line.quantity} @ ${formatMoney(line.avgCost, line.currency)} → ${formatMoney(line.marketValueEur)} (${formatPct(line.gainPct)})${broker}`;
   });
+
+  const unavailable = summary.lines.filter((line) => line.quoteUnavailable);
+  const footer =
+    unavailable.length > 0
+      ? [
+          "",
+          `_${unavailable.length} holding(s) excluded from total — live price unavailable._`,
+        ]
+      : [];
 
   return [
     `**Portfolio** — ${formatMoney(summary.totalMarketValueEur)}`,
@@ -296,6 +342,7 @@ function formatPortfolioSummary(summary: PortfolioSummary): string {
     `- Total P&L: ${formatMoney(summary.totalGainEur)} (${formatPct(summary.totalGainPct)})`,
     "",
     ...lines,
+    ...footer,
   ].join("\n");
 }
 
@@ -304,6 +351,19 @@ async function fetchHoldingDetail(ticker: string): Promise<string> {
   if (!holding) return `No holding found for ${ticker.toUpperCase()}.`;
 
   const line = await buildPortfolioLine(holding);
+  if (line.quoteUnavailable) {
+    return [
+      `📈 **${line.ticker}**`,
+      `- Qty: ${line.quantity}`,
+      `- Avg cost: ${formatMoney(line.avgCost, line.currency)}`,
+      `- Current: price unavailable`,
+      `- Cost basis: ${formatMoney(line.costBasisEur)}`,
+      line.broker ? `- Broker: ${line.broker}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   const quote = await getQuote(holding.ticker);
 
   return [
