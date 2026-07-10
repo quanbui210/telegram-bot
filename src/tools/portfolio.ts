@@ -285,7 +285,7 @@ function formatPortfolioSummary(summary: PortfolioSummary): string {
   });
 
   return [
-    `💰 **Portfolio** — ${formatMoney(summary.totalMarketValueEur)}`,
+    `**Portfolio** — ${formatMoney(summary.totalMarketValueEur)}`,
     `- Cost basis: ${formatMoney(summary.totalCostBasisEur)}`,
     `- Total P&L: ${formatMoney(summary.totalGainEur)} (${formatPct(summary.totalGainPct)})`,
     "",
